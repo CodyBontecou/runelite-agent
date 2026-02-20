@@ -2,13 +2,12 @@ package com.runeliteagent;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.IOException;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.client.config.ConfigManager;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -20,14 +19,15 @@ public class ClaudeApiClient
 {
     private static final String API_URL = "https://api.anthropic.com/v1/messages";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final String CONFIG_GROUP = "claudeagent";
     private static final Gson GSON = new Gson();
 
-    private final ClaudeAgentConfig config;
+    private final ConfigManager configManager;
     private final OkHttpClient httpClient;
 
-    public ClaudeApiClient(ClaudeAgentConfig config)
+    public ClaudeApiClient(ConfigManager configManager)
     {
-        this.config = config;
+        this.configManager = configManager;
         this.httpClient = new OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
@@ -36,23 +36,48 @@ public class ClaudeApiClient
     }
 
     /**
-     * Send a message to Claude with tool definitions and conversation history.
-     *
-     * @param messages  conversation messages array
-     * @param tools     tool definitions array
-     * @return the parsed JSON response
+     * Read the API key directly from ConfigManager to avoid secret-field persistence issues.
      */
+    private String getApiKey()
+    {
+        String key = configManager.getConfiguration(CONFIG_GROUP, "apiKey");
+        return key != null ? key.trim() : "";
+    }
+
+    private String getModel()
+    {
+        String model = configManager.getConfiguration(CONFIG_GROUP, "modelId");
+        return model != null && !model.isEmpty() ? model : "claude-sonnet-4-20250514";
+    }
+
+    private int getMaxTokens()
+    {
+        String val = configManager.getConfiguration(CONFIG_GROUP, "maxTokens");
+        try
+        {
+            return val != null ? Integer.parseInt(val) : 4096;
+        }
+        catch (NumberFormatException e)
+        {
+            return 4096;
+        }
+    }
+
     public JsonObject sendMessage(JsonArray messages, JsonArray tools) throws IOException
     {
-        String apiKey = config.apiKey();
-        if (apiKey == null || apiKey.isEmpty())
+        String apiKey = getApiKey();
+        if (apiKey.isEmpty())
         {
-            throw new IOException("Claude API key not configured. Set it in the plugin settings.");
+            throw new IOException("Claude API key not configured. Enter it in the chat panel or plugin settings.");
         }
 
+        log.info("Sending to Claude API. Key length: {}, prefix: {}",
+            apiKey.length(),
+            apiKey.length() > 10 ? apiKey.substring(0, 10) + "..." : "(short)");
+
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", config.modelId());
-        requestBody.addProperty("max_tokens", config.maxTokens());
+        requestBody.addProperty("model", getModel());
+        requestBody.addProperty("max_tokens", getMaxTokens());
         requestBody.add("messages", messages);
         requestBody.addProperty("system", buildSystemPrompt());
 
@@ -62,7 +87,6 @@ public class ClaudeApiClient
         }
 
         String jsonBody = GSON.toJson(requestBody);
-        log.debug("Claude API request: {}", jsonBody);
 
         Request request = new Request.Builder()
             .url(API_URL)
@@ -75,10 +99,10 @@ public class ClaudeApiClient
         try (Response response = httpClient.newCall(request).execute())
         {
             String responseBody = response.body() != null ? response.body().string() : "";
-            log.debug("Claude API response ({}): {}", response.code(), responseBody);
 
             if (!response.isSuccessful())
             {
+                log.error("Claude API error ({}): {}", response.code(), responseBody);
                 throw new IOException("Claude API error (HTTP " + response.code() + "): " + responseBody);
             }
 

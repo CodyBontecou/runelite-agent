@@ -50,10 +50,10 @@ public class ClaudeAgentPlugin extends Plugin
 
         runeLiteController = new RuneLiteController(configManager, pluginManager, client);
         wikiClient = new OsrsWikiClient();
-        apiClient = new ClaudeApiClient(config);
+        apiClient = new ClaudeApiClient(configManager);
         orchestrator = new AgentOrchestrator(apiClient, runeLiteController, wikiClient, config);
 
-        panel = new ClaudeAgentPanel(orchestrator, config);
+        panel = new ClaudeAgentPanel(orchestrator, configManager);
 
         final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/icon.png");
 
