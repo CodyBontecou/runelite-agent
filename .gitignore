@@ -1,0 +1,9 @@
+build/
+.gradle/
+*.class
+*.log
+.idea/
+*.iml
+.DS_Store
+# Allow gradle wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
