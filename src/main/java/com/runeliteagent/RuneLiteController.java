@@ -135,8 +135,9 @@ public class RuneLiteController
             {
                 return "Not logged in - no player stats available.";
             }
+            String playerName = client.getLocalPlayer().getName();
             StringBuilder sb = new StringBuilder();
-            sb.append("Player: ").append(client.getLocalPlayer().getName()).append("\n");
+            sb.append("Player: ").append(playerName != null ? playerName : "Unknown").append("\n");
             sb.append("Combat Level: ").append(client.getLocalPlayer().getCombatLevel()).append("\n\n");
             sb.append("Skills:\n");
             for (Skill skill : Skill.values())

@@ -206,8 +206,6 @@ public class ClaudeAgentPanel extends PluginPanel
             return;
         }
 
-        log.info("Saving API key. Length: {}, prefix: {}...", key.length(), key.substring(0, Math.min(10, key.length())));
-
         // Write directly to ConfigManager
         configManager.setConfiguration(CONFIG_GROUP, "apiKey", key);
 
@@ -215,7 +213,7 @@ public class ClaudeAgentPanel extends PluginPanel
         String saved = configManager.getConfiguration(CONFIG_GROUP, "apiKey");
         if (saved != null && saved.equals(key))
         {
-            log.info("API key saved and verified successfully.");
+            log.info("API key saved successfully.");
             setupStatus.setForeground(SUCCESS_COLOR);
             setupStatus.setText("✓ Key saved!");
             // Switch to chat view
@@ -223,7 +221,7 @@ public class ClaudeAgentPanel extends PluginPanel
         }
         else
         {
-            log.error("API key verification failed. Saved: '{}', Expected length: {}", saved, key.length());
+            log.error("API key verification failed after save attempt.");
             setupStatus.setForeground(ERROR_COLOR);
             setupStatus.setText("Failed to save key. Try again.");
         }

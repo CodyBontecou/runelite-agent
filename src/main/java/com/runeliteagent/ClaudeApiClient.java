@@ -71,9 +71,7 @@ public class ClaudeApiClient
             throw new IOException("Claude API key not configured. Enter it in the chat panel or plugin settings.");
         }
 
-        log.info("Sending to Claude API. Key length: {}, prefix: {}",
-            apiKey.length(),
-            apiKey.length() > 10 ? apiKey.substring(0, 10) + "..." : "(short)");
+        log.debug("Sending request to Claude API");
 
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("model", getModel());

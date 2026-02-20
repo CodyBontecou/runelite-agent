@@ -16,7 +16,7 @@ import okhttp3.Response;
 public class OsrsWikiClient
 {
     private static final String WIKI_API = "https://oldschool.runescape.wiki/api.php";
-    private static final String USER_AGENT = "RuneLite-Claude-Agent/1.0 (https://github.com/runelite)";
+    private static final String USER_AGENT = "RuneLite-Claude-Agent/1.0 (https://github.com/CodyBontecou/runelite-agent)";
 
     private final OkHttpClient httpClient;
 
@@ -140,41 +140,124 @@ public class OsrsWikiClient
     }
 
     /**
-     * Get item price from the wiki's exchange data.
+     * Get item price from the OSRS Wiki real-time prices API.
+     * First resolves the item ID via the wiki mapping endpoint, then fetches the latest price.
      */
     public String getItemPrice(String itemName)
     {
         try
         {
-            String encodedName = URLEncoder.encode(itemName, StandardCharsets.UTF_8.name());
-            // Use the OSRS Wiki real-time prices API
-            String url = "https://prices.runescape.wiki/api/v1/osrs/latest";
-
-            // First, find the item ID by searching the wiki
-            String searchUrl = WIKI_API + "?action=query&list=search&srsearch=" + encodedName
-                + "+Exchange&srnamespace=0&srlimit=3&format=json";
-
-            Request searchReq = new Request.Builder()
-                .url(searchUrl)
+            // Step 1: Get item mapping to find the item ID
+            String mappingUrl = "https://prices.runescape.wiki/api/v1/osrs/mapping";
+            Request mappingReq = new Request.Builder()
+                .url(mappingUrl)
                 .header("User-Agent", USER_AGENT)
                 .get()
                 .build();
 
-            try (Response searchResp = httpClient.newCall(searchReq).execute())
+            int itemId = -1;
+            String resolvedName = itemName;
+
+            try (Response mappingResp = httpClient.newCall(mappingReq).execute())
             {
-                if (!searchResp.isSuccessful() || searchResp.body() == null)
+                if (!mappingResp.isSuccessful() || mappingResp.body() == null)
                 {
-                    return "Price lookup failed.";
+                    return "Price lookup failed: could not fetch item mapping.";
                 }
-                // Return a message directing to wiki for now
-                return "For real-time prices, check the Grand Exchange page: " +
-                    "https://oldschool.runescape.wiki/w/Module:Exchange/" +
-                    itemName.replace(" ", "_") +
-                    "\n\nYou can also use the 'search_wiki' tool to find detailed item info.";
+                String body = mappingResp.body().string();
+                JsonArray items = JsonParser.parseString(body).getAsJsonArray();
+                String lowerName = itemName.toLowerCase();
+
+                // Try exact match first, then partial
+                for (JsonElement elem : items)
+                {
+                    JsonObject item = elem.getAsJsonObject();
+                    String name = item.get("name").getAsString();
+                    if (name.equalsIgnoreCase(itemName))
+                    {
+                        itemId = item.get("id").getAsInt();
+                        resolvedName = name;
+                        break;
+                    }
+                }
+                if (itemId == -1)
+                {
+                    for (JsonElement elem : items)
+                    {
+                        JsonObject item = elem.getAsJsonObject();
+                        String name = item.get("name").getAsString();
+                        if (name.toLowerCase().contains(lowerName))
+                        {
+                            itemId = item.get("id").getAsInt();
+                            resolvedName = name;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (itemId == -1)
+            {
+                return "Item not found: " + itemName + ". Try a more specific name.";
+            }
+
+            // Step 2: Get latest price for this item
+            String priceUrl = "https://prices.runescape.wiki/api/v1/osrs/latest?id=" + itemId;
+            Request priceReq = new Request.Builder()
+                .url(priceUrl)
+                .header("User-Agent", USER_AGENT)
+                .get()
+                .build();
+
+            try (Response priceResp = httpClient.newCall(priceReq).execute())
+            {
+                if (!priceResp.isSuccessful() || priceResp.body() == null)
+                {
+                    return "Price lookup failed: could not fetch price data.";
+                }
+                String body = priceResp.body().string();
+                JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+                JsonObject data = json.getAsJsonObject("data");
+                JsonObject itemData = data.getAsJsonObject(String.valueOf(itemId));
+
+                if (itemData == null)
+                {
+                    return "No price data available for " + resolvedName + " (ID: " + itemId + ").";
+                }
+
+                StringBuilder sb = new StringBuilder();
+                sb.append("Grand Exchange Price for **").append(resolvedName).append("** (ID: ").append(itemId).append(")\n\n");
+
+                if (itemData.has("high") && !itemData.get("high").isJsonNull())
+                {
+                    sb.append("Instant buy: ").append(String.format("%,d", itemData.get("high").getAsLong())).append(" gp\n");
+                }
+                if (itemData.has("low") && !itemData.get("low").isJsonNull())
+                {
+                    sb.append("Instant sell: ").append(String.format("%,d", itemData.get("low").getAsLong())).append(" gp\n");
+                }
+                if (itemData.has("highTime") && !itemData.get("highTime").isJsonNull())
+                {
+                    long ts = itemData.get("highTime").getAsLong();
+                    long minutesAgo = (System.currentTimeMillis() / 1000 - ts) / 60;
+                    sb.append("Last buy: ").append(minutesAgo).append(" min ago\n");
+                }
+                if (itemData.has("lowTime") && !itemData.get("lowTime").isJsonNull())
+                {
+                    long ts = itemData.get("lowTime").getAsLong();
+                    long minutesAgo = (System.currentTimeMillis() / 1000 - ts) / 60;
+                    sb.append("Last sell: ").append(minutesAgo).append(" min ago\n");
+                }
+
+                sb.append("\nWiki: https://oldschool.runescape.wiki/w/")
+                    .append(resolvedName.replace(" ", "_"));
+
+                return sb.toString();
             }
         }
         catch (IOException e)
         {
+            log.error("Price lookup failed", e);
             return "Price lookup failed: " + e.getMessage();
         }
     }
